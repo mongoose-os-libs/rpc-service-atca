@@ -3,12 +3,9 @@
  * All rights reserved
  */
 
+#include "mgos_rpc.h"
+
 #include "fw/src/mgos_atca.h"
-
-#if MGOS_ENABLE_RPC && MGOS_ENABLE_ATCA
-
-#include "fw/src/mgos_rpc.h"
-
 #include "cryptoauthlib.h"
 
 static void mgos_atca_get_config(struct mg_rpc_request_info *ri, void *cb_arg,
@@ -282,11 +279,3 @@ bool mgos_rpc_service_atca_init(void) {
                      NULL);
   return true;
 }
-
-#else
-
-bool mgos_rpc_service_atca_init(void) {
-  return true;
-}
-
-#endif /* MGOS_ENABLE_RPC && MGOS_ENABLE_ATCA */
