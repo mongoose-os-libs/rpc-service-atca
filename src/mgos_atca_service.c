@@ -4,8 +4,8 @@
  */
 
 #include "mgos_rpc.h"
+#include "mgos_atca.h"
 
-#include "fw/src/mgos_atca.h"
 #include "cryptoauthlib.h"
 
 static void mgos_atca_get_config(struct mg_rpc_request_info *ri, void *cb_arg,
