@@ -260,7 +260,7 @@ clean:
 bool mgos_rpc_service_atca_init(void) {
   struct mg_rpc *c = mgos_rpc_get_global();
 
-  if (!get_cfg()->sys.atca.enable || !mbedtls_atca_is_available()) {
+  if (!mgos_sys_config_get_sys_atca_enable() || !mbedtls_atca_is_available()) {
     return true;
   }
   mg_rpc_add_handler(c, "ATCA.GetConfig", "", mgos_atca_get_config, NULL);
