@@ -11,12 +11,6 @@
 static void mgos_atca_get_config(struct mg_rpc_request_info *ri, void *cb_arg,
                                  struct mg_rpc_frame_info *fi,
                                  struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    goto clean;
-  }
-
   uint8_t config[ATCA_CONFIG_SIZE];
   for (int i = 0; i < ATCA_CONFIG_SIZE / ATCA_BLOCK_SIZE; i++) {
     int offset = (i * ATCA_BLOCK_SIZE);
@@ -37,17 +31,12 @@ static void mgos_atca_get_config(struct mg_rpc_request_info *ri, void *cb_arg,
 clean:
   (void) cb_arg;
   (void) args;
+  (void) fi;
 }
 
 static void mgos_atca_set_config(struct mg_rpc_request_info *ri, void *cb_arg,
                                  struct mg_rpc_frame_info *fi,
                                  struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    return;
-  }
-
   uint8_t *config = NULL;
   uint32_t config_len = 0;
   json_scanf(args.p, args.len, ri->args_fmt, &config, &config_len);
@@ -72,17 +61,12 @@ static void mgos_atca_set_config(struct mg_rpc_request_info *ri, void *cb_arg,
 clean:
   if (config != NULL) free(config);
   (void) cb_arg;
+  (void) fi;
 }
 
 static void mgos_atca_lock_zone(struct mg_rpc_request_info *ri, void *cb_arg,
                                 struct mg_rpc_frame_info *fi,
                                 struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    return;
-  }
-
   int zone = -1;
   json_scanf(args.p, args.len, ri->args_fmt, &zone);
 
@@ -112,17 +96,12 @@ static void mgos_atca_lock_zone(struct mg_rpc_request_info *ri, void *cb_arg,
 
 clean:
   (void) cb_arg;
+  (void) fi;
 }
 
 static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
                               struct mg_rpc_frame_info *fi,
                               struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    return;
-  }
-
   int slot = -1;
   uint8_t *key = NULL, *write_key = NULL;
   uint32_t key_len = 0, write_key_len = 0;
@@ -168,17 +147,12 @@ clean:
   if (key != NULL) free(key);
   if (write_key != NULL) free(write_key);
   (void) cb_arg;
+  (void) fi;
 }
 
 static void mgos_atca_get_or_gen_key(struct mg_rpc_request_info *ri,
                                      void *cb_arg, struct mg_rpc_frame_info *fi,
                                      struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    return;
-  }
-
   uint8_t pubkey[ATCA_PUB_KEY_SIZE];
   int slot = -1;
   json_scanf(args.p, args.len, ri->args_fmt, &slot);
@@ -211,17 +185,11 @@ static void mgos_atca_get_or_gen_key(struct mg_rpc_request_info *ri,
   ri = NULL;
 
 clean:
-  return;
+  (void) fi;
 }
 
 static void mgos_atca_sign(struct mg_rpc_request_info *ri, void *cb_arg,
                            struct mg_rpc_frame_info *fi, struct mg_str args) {
-  if (!fi->channel_is_trusted) {
-    mg_rpc_send_errorf(ri, 403, "unauthorized");
-    ri = NULL;
-    return;
-  }
-
   int slot = -1;
   uint8_t *digest = NULL;
   uint32_t digest_len = 0;
@@ -254,7 +222,7 @@ static void mgos_atca_sign(struct mg_rpc_request_info *ri, void *cb_arg,
 clean:
   if (digest != NULL) free(digest);
   (void) cb_arg;
-  return;
+  (void) fi;
 }
 
 bool mgos_rpc_service_atca_init(void) {
