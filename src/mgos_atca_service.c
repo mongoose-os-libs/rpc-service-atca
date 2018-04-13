@@ -129,7 +129,7 @@ static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
   }
 
   uint32_t exp_key_len = (is_ecc ? ATCA_PRIV_KEY_SIZE : ATCA_KEY_SIZE);
-  if (key_len != exp_key_len) {
+  if (key_len > exp_key_len) {
     mg_rpc_send_errorf(ri, 400, "Expected %d bytes, got %d", (int) exp_key_len,
                        (int) key_len);
     ri = NULL;
