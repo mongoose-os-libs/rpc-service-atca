@@ -23,8 +23,8 @@
 static void mgos_atca_get_config(struct mg_rpc_request_info *ri, void *cb_arg,
                                  struct mg_rpc_frame_info *fi,
                                  struct mg_str args) {
-  uint8_t config[ATCA_CONFIG_SIZE];
-  for (int i = 0; i < ATCA_CONFIG_SIZE / ATCA_BLOCK_SIZE; i++) {
+  uint8_t config[ATCA_ECC_CONFIG_SIZE];
+  for (int i = 0; i < ATCA_ECC_CONFIG_SIZE / ATCA_BLOCK_SIZE; i++) {
     int offset = (i * ATCA_BLOCK_SIZE);
     ATCA_STATUS status =
         atcab_read_zone(ATCA_ZONE_CONFIG, 0 /* slot */, i /* block */,
@@ -53,9 +53,9 @@ static void mgos_atca_set_config(struct mg_rpc_request_info *ri, void *cb_arg,
   uint32_t config_len = 0;
   json_scanf(args.p, args.len, ri->args_fmt, &config, &config_len);
 
-  if (config_len != ATCA_CONFIG_SIZE) {
+  if (config_len != ATCA_ECC_CONFIG_SIZE) {
     mg_rpc_send_errorf(ri, 400, "Expected %d bytes, got %d",
-                       (int) ATCA_CONFIG_SIZE, (int) config_len);
+                       (int) ATCA_ECC_CONFIG_SIZE, (int) config_len);
     ri = NULL;
     goto clean;
   }
@@ -83,13 +83,12 @@ static void mgos_atca_lock_zone(struct mg_rpc_request_info *ri, void *cb_arg,
   json_scanf(args.p, args.len, ri->args_fmt, &zone);
 
   ATCA_STATUS status;
-  uint8_t lock_response = 0;
   switch (zone) {
     case LOCK_ZONE_CONFIG:
-      status = atcab_lock_config_zone(&lock_response);
+      status = atcab_lock_config_zone();
       break;
     case LOCK_ZONE_DATA:
-      status = atcab_lock_data_zone(&lock_response);
+      status = atcab_lock_data_zone();
       break;
     default:
       mg_rpc_send_errorf(ri, 403, "Invalid zone");
@@ -114,15 +113,15 @@ clean:
 static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
                               struct mg_rpc_frame_info *fi,
                               struct mg_str args) {
-  int slot = -1;
+  int slot = -1, block = 0;
   uint8_t *key = NULL, *write_key = NULL;
   uint32_t key_len = 0, write_key_len = 0;
   uint32_t wk_slot = 0;
   bool is_ecc = false;
-  json_scanf(args.p, args.len, ri->args_fmt, &slot, &is_ecc, &key, &key_len,
-             &write_key, &write_key_len, &wk_slot);
+  json_scanf(args.p, args.len, ri->args_fmt, &slot, &block, &is_ecc, &key,
+             &key_len, &write_key, &write_key_len, &wk_slot);
 
-  if (slot < 0 || slot > 15 || (is_ecc && slot > 7)) {
+  if (slot < 0 || slot > 15) {
     mg_rpc_send_errorf(ri, 400, "Invalid slot");
     ri = NULL;
     goto clean;
@@ -144,7 +143,7 @@ static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
     status = atcab_priv_write(slot, key_arg, wk_slot,
                               (write_key_len == 32 ? write_key : NULL));
   } else {
-    status = atcab_write_zone(ATCA_ZONE_DATA, slot, 0, 0, key, key_len);
+    status = atcab_write_zone(ATCA_ZONE_DATA, slot, block, 0, key, key_len);
   }
   if (status != ATCA_SUCCESS) {
     mg_rpc_send_errorf(ri, 500, "Failed to set key: 0x%02x", status);
@@ -249,7 +248,7 @@ bool mgos_rpc_service_atca_init(void) {
   mg_rpc_add_handler(c, "ATCA.LockZone", "{zone: %d}", mgos_atca_lock_zone,
                      NULL);
   mg_rpc_add_handler(c, "ATCA.SetKey",
-                     "{slot:%d, ecc:%B, key:%V, wkey:%V, wkslot:%u}",
+                     "{slot:%d, block:%d, ecc:%B, key:%V, wkey:%V, wkslot:%u}",
                      mgos_atca_set_key, NULL);
   mg_rpc_add_handler(c, "ATCA.GenKey", "{slot: %d}", mgos_atca_get_or_gen_key,
                      "ATCA.GenKey");
