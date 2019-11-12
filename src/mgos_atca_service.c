@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#include "mgos_rpc.h"
 #include "mgos_atca.h"
+#include "mgos_rpc.h"
 
 #include "cryptoauthlib.h"
 
@@ -127,9 +127,8 @@ static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
     goto clean;
   }
 
-  uint32_t exp_key_len = (is_ecc ? ATCA_PRIV_KEY_SIZE : ATCA_KEY_SIZE);
-  if (key_len > exp_key_len) {
-    mg_rpc_send_errorf(ri, 400, "Expected %d bytes, got %d", (int) exp_key_len,
+  if (write_key_len != 0 && write_key_len != ATCA_KEY_SIZE) {
+    mg_rpc_send_errorf(ri, 400, "Expected %d bytes, got %d", ATCA_KEY_SIZE,
                        (int) key_len);
     ri = NULL;
     goto clean;
@@ -137,11 +136,18 @@ static void mgos_atca_set_key(struct mg_rpc_request_info *ri, void *cb_arg,
 
   ATCA_STATUS status;
   if (is_ecc) {
+    if (key_len > ATCA_PRIV_KEY_SIZE) {
+      mg_rpc_send_errorf(ri, 400, "Expected %d bytes, got %d",
+                         ATCA_PRIV_KEY_SIZE, (int) key_len);
+      ri = NULL;
+      goto clean;
+    }
     uint8_t key_arg[4 + ATCA_PRIV_KEY_SIZE];
     memset(key_arg, 0, 4);
     memcpy(key_arg + 4, key, ATCA_PRIV_KEY_SIZE);
-    status = atcab_priv_write(slot, key_arg, wk_slot,
-                              (write_key_len == 32 ? write_key : NULL));
+    status = atcab_priv_write(slot, key_arg, wk_slot, write_key);
+  } else if (write_key_len > 0) {
+    status = atcab_write_enc(slot, block, key, write_key, wk_slot);
   } else {
     status = atcab_write_zone(ATCA_ZONE_DATA, slot, block, 0, key, key_len);
   }
@@ -206,7 +212,7 @@ static void mgos_atca_sign(struct mg_rpc_request_info *ri, void *cb_arg,
   uint32_t digest_len = 0;
   json_scanf(args.p, args.len, ri->args_fmt, &slot, &digest, &digest_len);
 
-  if (slot < 0 || slot > 7) {
+  if (slot < 0 || slot > 15) {
     mg_rpc_send_errorf(ri, 400, "Invalid slot");
     ri = NULL;
     goto clean;
@@ -236,6 +242,66 @@ clean:
   (void) fi;
 }
 
+static void mgos_atca_aes(struct mg_rpc_request_info *ri, void *cb_arg,
+                          struct mg_rpc_frame_info *fi, struct mg_str args) {
+  int slot = -1, block = 0;
+  int mode = 0;
+  uint32_t data_len = 0;
+  uint8_t *data_in = NULL, *data_out = NULL;
+  json_scanf(args.p, args.len, ri->args_fmt, &slot, &block, &mode, &data_in,
+             &data_len);
+
+  if (slot < 0 || slot > 15 || block < 0) {
+    mg_rpc_send_errorf(ri, 400, "Invalid slot");
+    ri = NULL;
+    goto clean;
+  }
+
+  if (data_len % 16 != 0) {
+    mg_rpc_send_errorf(ri, 400, "Data must be padded to AES block (16)");
+    ri = NULL;
+    goto clean;
+  }
+
+  data_out = (uint8_t *) malloc(data_len);
+  if (data_out == NULL) {
+    mg_rpc_send_errorf(ri, 500, "Out of memory");
+    ri = NULL;
+    goto clean;
+  }
+
+  for (uint32_t off = 0; off < data_len; off += 16) {
+    ATCA_STATUS status;
+    switch (mode) {
+      case 0:
+        status = atcab_aes_encrypt(slot, block, data_in + off, data_out + off);
+        break;
+      case 1:
+        status = atcab_aes_decrypt(slot, block, data_in + off, data_out + off);
+        break;
+      default:
+        mg_rpc_send_errorf(ri, 400, "Invalid mode");
+        ri = NULL;
+        goto clean;
+    }
+    if (status != ATCA_SUCCESS) {
+      mg_rpc_send_errorf(ri, 500, "Failed to %s: 0x%02x",
+                         (mode == 0 ? "encrypt" : "decrypt"), status);
+      ri = NULL;
+      goto clean;
+    }
+  }
+
+  mg_rpc_send_responsef(ri, "{data: %V}", data_out, data_len);
+  ri = NULL;
+
+clean:
+  free(data_in);
+  free(data_out);
+  (void) cb_arg;
+  (void) fi;
+}
+
 bool mgos_rpc_service_atca_init(void) {
   struct mg_rpc *c = mgos_rpc_get_global();
 
@@ -247,14 +313,17 @@ bool mgos_rpc_service_atca_init(void) {
                      NULL);
   mg_rpc_add_handler(c, "ATCA.LockZone", "{zone: %d}", mgos_atca_lock_zone,
                      NULL);
-  mg_rpc_add_handler(c, "ATCA.SetKey",
-                     "{slot:%d, block:%d, ecc:%B, key:%V, wkey:%V, wkslot:%u}",
-                     mgos_atca_set_key, NULL);
+  mg_rpc_add_handler(
+      c, "ATCA.SetKey",
+      "{slot: %d, block: %d, ecc: %B, key: %V, wkey: %V, wkslot: %u}",
+      mgos_atca_set_key, NULL);
   mg_rpc_add_handler(c, "ATCA.GenKey", "{slot: %d}", mgos_atca_get_or_gen_key,
                      "ATCA.GenKey");
   mg_rpc_add_handler(c, "ATCA.GetPubKey", "{slot: %d}",
                      mgos_atca_get_or_gen_key, "ATCA.GetPubKey");
   mg_rpc_add_handler(c, "ATCA.Sign", "{slot: %d, digest: %V}", mgos_atca_sign,
                      NULL);
+  mg_rpc_add_handler(c, "ATCA.AES", "{slot: %d, block: %d, mode: %d, data: %V}",
+                     mgos_atca_aes, NULL);
   return true;
 }
